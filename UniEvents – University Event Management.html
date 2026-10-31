@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>UniEvents – University Event Management</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--tx:#1d2330;--mu:#6b7385;--bd:#dde1ea;--ac:#2a5bd7;--ok:#1e8e5a;--wa:#c27a00;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12151c;--card:#1b2029;--tx:#e8ebf2;--mu:#8f98ab;--bd:#2c3340;--ac:#6d93f5;--ok:#4cc48a;--wa:#e0a43a}}
+:root[data-theme="dark"]{--bg:#12151c;--card:#1b2029;--tx:#e8ebf2;--mu:#8f98ab;--bd:#2c3340;--ac:#6d93f5;--ok:#4cc48a;--wa:#e0a43a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+header{background:var(--card);border-bottom:1px solid var(--bd);position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+.w{max-width:980px;margin:0 auto;padding:12px 14px}.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+h1{font-size:18px;margin:0 12px 0 0}nav{display:flex;gap:4px;flex-wrap:wrap}
+nav button{background:none;border:0;color:var(--mu);padding:7px 11px;border-radius:7px;font:inherit;font-weight:600;cursor:pointer}
+nav button.on{background:var(--ac);color:#fff}h2{margin:6px 0 12px;font-size:20px}h3{margin:18px 0 8px;font-size:16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin:10px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.stat b{display:block;font-size:26px}
+.stat span,.mu{color:var(--mu);font-size:13px}.sc{overflow-x:auto}table{border-collapse:collapse;width:100%}
+th,td{padding:8px;border-bottom:1px solid var(--bd);text-align:left;white-space:nowrap}th{color:var(--mu);font-size:12px;text-transform:uppercase}
+input,select,textarea{font:inherit;padding:7px;border:1px solid var(--bd);border-radius:7px;background:var(--bg);color:var(--tx);margin:3px 4px 3px 0;max-width:100%}
+button.b{background:var(--ac);color:#fff;border:0;padding:7px 13px;border-radius:7px;font:inherit;font-weight:600;cursor:pointer}
+button.g{background:none;border:1px solid var(--bd);color:var(--tx);padding:5px 10px;border-radius:7px;font:inherit;cursor:pointer}
+.bar{height:8px;background:var(--bd);border-radius:4px;min-width:80px}.bar i{display:block;height:8px;background:var(--ac);border-radius:4px}
+.tag{font-size:12px;padding:2px 8px;border-radius:10px;background:var(--bd)}.ok{color:var(--ok)}.wa{color:var(--wa)}a.l{color:var(--ac);cursor:pointer;font-weight:600}
+#cert{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;z-index:9}
+#cert .c{background:#fff;color:#222;font-family:Georgia,serif;text-align:center;border:10px double #2a5bd7;padding:40px 24px;max-width:700px;width:100%}
+#cert h1{font-size:32px;margin:0 0 14px}@media print{body>*:not(#cert){display:none!important}#cert{position:static;background:none;display:block!important}.np{display:none}}
+</style></head><body>
+<header><div class="w top"><h1>🎓 UniEvents</h1><nav id="nav"></nav></div></header>
+<main class="w" id="app"></main>
+<div id="cert"><div><div class="c" id="certc"></div><p class="np" style="text-align:center"><button class="b" onclick="print()">Print</button> <button class="g" onclick="cert.style.display='none'">Close</button></p></div></div>
+<script>
+const CATS=["Workshop","Seminar","Cultural","Sports","Hackathon"],$=s=>document.querySelector(s);
+const today=new Date().toISOString().slice(0,10),addD=(d,n)=>new Date(new Date(d).getTime()+n*864e5).toISOString().slice(0,10);
+const diff=(a,b)=>Math.round((new Date(a)-new Date(b))/864e5);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let S={events:[],people:[],regs:[],n:1},view="dash",cur=null,msg="";
+try{S=JSON.parse(localStorage.getItem("unievents"))||S}catch(e){}
+const save=()=>{try{localStorage.setItem("unievents",JSON.stringify(S))}catch(e){}};
+const id=()=>S.n++,ev=i=>S.events.find(e=>e.id==i),pe=i=>S.people.find(p=>p.id==i);
+
+// ---- Participation prediction: logistic regression trained in-browser ----
+function predict(){
+  const hist={},X=[],Y=[],up=[];
+  [...S.regs].sort((a,b)=>ev(a.eid).date<ev(b.eid).date?-1:1).forEach(r=>{
+    const e=ev(r.eid),p=pe(r.pid),h=hist[r.pid]||(hist[r.pid]=[0,0]);
+    const f=[h[0]?h[1]/h[0]:.6,Math.max(0,diff(e.date,r.on))/14,p.year/4,1];
+    if(e.date<today){X.push(f);Y.push(r.att?1:0);h[0]++;h[1]+=r.att?1:0}else up.push([r.id,f])});
+  const out={};if(X.length<30||new Set(Y).size<2){up.forEach(([i,f])=>out[i]=f[0]);return{out,acc:null}}
+  let w=[0,0,0,0];const sig=z=>1/(1+Math.exp(-z)),dot=(w,f)=>w.reduce((s,x,i)=>s+x*f[i],0);
+  for(let k=0;k<400;k++){const g=[0,0,0,0];X.forEach((f,i)=>{const er=sig(dot(w,f))-Y[i];f.forEach((x,j)=>g[j]+=er*x/X.length)});w=w.map((x,j)=>x-1.2*g[j])}
+  const acc=X.filter((f,i)=>(sig(dot(w,f))>.5?1:0)==Y[i]).length/X.length;
+  up.forEach(([i,f])=>out[i]=sig(dot(w,f)));return{out,acc}}
+
+// ---- Actions ----
+function go(v,c){view=v;cur=c||null;msg="";draw()}
+function addEvent(){const g=n=>$("#"+n).value;if(!g("t")||!g("d"))return;
+  S.events.push({id:id(),title:g("t"),cat:g("c"),venue:g("v")||"TBA",date:g("d"),cap:+g("k")||50,desc:g("x")});save();draw()}
+function addPerson(){const g=n=>$("#"+n).value.trim();if(!g("pn")||!g("pe"))return;
+  if(S.people.some(p=>p.email==g("pe")))return alert("Email already exists");
+  S.people.push({id:id(),name:g("pn"),email:g("pe"),dept:g("pd")||"General",year:+g("py")||1});save();draw()}
+function reg(eid){const pid=+$("#rp").value,e=ev(eid);if(!pid)return;
+  if(S.regs.filter(r=>r.eid==eid).length>=e.cap){msg="Event is full.";return draw()}
+  S.regs.push({id:id(),eid,pid,on:today,att:0});save();draw()}
+function tog(rid){const r=S.regs.find(r=>r.id==rid);r.att=r.att?0:1;save();draw()}
+function showCert(rid){const r=S.regs.find(r=>r.id==rid),e=ev(r.eid);
+  $("#certc").innerHTML=`<h1>Certificate of Participation</h1><p>This is to certify that</p><h2 style="font-size:28px;margin:8px 0">${esc(pe(r.pid).name)}</h2><p>attended <b>${esc(e.title)}</b> on ${e.date}.</p><p style="color:#777;margin-top:30px">Verification code: CERT-${String(r.id).padStart(6,"0")}</p>`;
+  $("#cert").style.display="flex"}
+function csv(){const rows=[["event","category","date","name","email","department","attended"]];
+  S.regs.forEach(r=>{const e=ev(r.eid),p=pe(r.pid);rows.push([e.title,e.cat,e.date,p.name,p.email,p.dept,r.att])});
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([rows.map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(",")).join("\n")],{type:"text/csv"}));
+  a.download="event_report.csv";a.click()}
+function seed(){let s=7;const R=()=>(s=(s*16807)%2147483647)/2147483647,D=["CSE","ECE","Mech","Civil","MBA"];
+  S={events:[],people:[],regs:[],n:1};const rel={};
+  for(let i=1;i<=60;i++){const p={id:id(),name:"Student "+i,email:`s${i}@uni.edu`,dept:D[Math.floor(R()*5)],year:1+Math.floor(R()*4)};rel[p.id]=.3+R()*.65;S.people.push(p)}
+  for(let k=0;k<15;k++){const past=k<12,d=past?addD(today,-15*(12-k)):addD(today,5*(k-11)),c=CATS[Math.floor(R()*5)];
+    const e={id:id(),title:`${c} #${k+1}`,cat:c,venue:["Hall A","Auditorium","Lab 2"][Math.floor(R()*3)],date:d,cap:40,desc:"Demo event"};S.events.push(e);
+    const ps=[...S.people].sort(()=>R()-.5).slice(0,30);
+    ps.forEach(p=>{const lead=1+Math.floor(R()*14);S.regs.push({id:id(),eid:e.id,pid:p.id,on:addD(d,-lead),att:past&&R()<rel[p.id]-.01*lead?1:0})})}
+  save();draw()}
+function reset(){if(confirm("Delete all data?")){S={events:[],people:[],regs:[],n:1};save();go("dash")}}
+
+// ---- Views ----
+const T=(h,rows)=>`<div class="sc"><table><tr>${h.map(x=>`<th>${x}</th>`).join("")}</tr>${rows}</table></div>`;
+const cnt=eid=>S.regs.filter(r=>r.eid==eid).length;
+function dash(){const up=S.events.filter(e=>e.date>=today).sort((a,b)=>a.date<b.date?-1:1).slice(0,5);
+  return`<h2>Dashboard</h2><div class="grid">${[["Events",S.events.length],["Participants",S.people.length],["Registrations",S.regs.length],["Attended",S.regs.filter(r=>r.att).length]].map(([l,v])=>`<div class="card stat"><b>${v}</b><span>${l}</span></div>`).join("")}</div>
+  <h3>Upcoming events</h3>${up.map(e=>`<div class="card"><a class="l" onclick="go('event',${e.id})">${esc(e.title)}</a> <span class="tag">${e.cat}</span><br><span class="mu">${e.date} · ${esc(e.venue)} · ${cnt(e.id)}/${e.cap} registered</span></div>`).join("")||'<p class="mu">No upcoming events.</p>'}
+  <p><button class="g" onclick="seed()">Load demo data</button> <button class="g" onclick="reset()">Reset all</button></p>`}
+function events(){const l=[...S.events].sort((a,b)=>a.date<b.date?1:-1);
+  return`<h2>Events</h2>${S.events.length?T(["Title","Category","Date","Venue","Registered"],l.map(e=>`<tr><td><a class="l" onclick="go('event',${e.id})">${esc(e.title)}</a><td>${e.cat}<td>${e.date}<td>${esc(e.venue)}<td>${cnt(e.id)}/${e.cap}`).join("")):'<p class="mu">No events yet.</p>'}
+  <div class="card"><h3 style="margin-top:0">Create event</h3><input id="t" placeholder="Title"><select id="c">${CATS.map(c=>`<option>${c}`).join("")}</select><input id="v" placeholder="Venue"><input id="d" type="date"><input id="k" type="number" min="1" value="50" style="width:90px"><br><textarea id="x" placeholder="Description" rows="2" style="width:100%"></textarea><br><button class="b" onclick="addEvent()">Create</button></div>`}
+function event(){const e=ev(cur);if(!e)return events();const rs=S.regs.filter(r=>r.eid==e.id).map(r=>({...r,p:pe(r.pid)}));
+  const free=S.people.filter(p=>!rs.some(r=>r.pid==p.id)),up=e.date>=today,P=up?predict():{out:{}};
+  const exp=rs.reduce((s,r)=>s+(P.out[r.id]||0),0);
+  return`<p><a class="l" onclick="go('events')">← Events</a></p><h2>${esc(e.title)}</h2><p class="mu">${e.cat} · ${e.date} · ${esc(e.venue)} · capacity ${e.cap}</p><p>${esc(e.desc||"")}</p>
+  ${up?`<div class="card"><b>Predicted turnout:</b> ${Math.round(exp)} of ${rs.length} registered <span class="mu">${P.acc!=null?`(model accuracy on past data ${Math.round(P.acc*100)}%)`:"(baseline: past attendance rates)"}</span></div>`:""}
+  <p class="wa">${msg}</p><div class="card"><b>Register participant</b><br><select id="rp">${free.map(p=>`<option value="${p.id}">${esc(p.name)} (${esc(p.email)})`).join("")}</select><button class="b" onclick="reg(${e.id})">Register</button></div>
+  <h3>Registrations &amp; attendance</h3>${rs.length?T(["Name","Dept","P(attend)","Attendance","Certificate"],rs.map(r=>`<tr><td>${esc(r.p.name)}<td>${esc(r.p.dept)}<td>${r.id in P.out?Math.round(P.out[r.id]*100)+"%":"–"}<td><button class="g" onclick="tog(${r.id})">${r.att?'<span class="ok">✔ Present</span>':"Mark present"}</button><td>${r.att?`<a class="l" onclick="showCert(${r.id})">View</a>`:"–"}`).join("")):'<p class="mu">Nobody registered yet.</p>'}`}
+function people(){return`<h2>Participants</h2>${S.people.length?T(["Name","Email","Dept","Year","Registered","Attended"],S.people.map(p=>{const r=S.regs.filter(x=>x.pid==p.id);return`<tr><td>${esc(p.name)}<td>${esc(p.email)}<td>${esc(p.dept)}<td>${p.year}<td>${r.length}<td>${r.filter(x=>x.att).length}`}).join("")):'<p class="mu">No participants yet.</p>'}
+  <div class="card"><h3 style="margin-top:0">Add participant</h3><input id="pn" placeholder="Name"><input id="pe" type="email" placeholder="Email"><input id="pd" placeholder="Department"><input id="py" type="number" min="1" max="6" value="1" style="width:70px"><button class="b" onclick="addPerson()">Add</button></div>`}
+function group(keyf,list){const m={};list.forEach(r=>{const k=keyf(r);(m[k]=m[k]||[0,0]);m[k][0]++;m[k][1]+=r.att?1:0});return Object.entries(m).map(([k,v])=>`<tr><td>${esc(k)}<td>${v[0]}<td>${v[1]}<td>${Math.round(100*v[1]/v[0])}%`).join("")}
+function reports(){const past=S.regs.filter(r=>ev(r.eid).date<today);
+  return`<h2>Reports</h2><p><button class="b" onclick="csv()">Download CSV</button></p>
+  ${T(["Event","Date","Registered","Attended","Fill","Rate"],[...S.events].sort((a,b)=>a.date<b.date?1:-1).map(e=>{const rs=S.regs.filter(r=>r.eid==e.id),a=rs.filter(r=>r.att).length;return`<tr><td>${esc(e.title)}<td>${e.date}<td>${rs.length}<td>${a}<td><div class="bar"><i style="width:${Math.min(100,100*rs.length/e.cap)}%"></i></div><td>${rs.length&&e.date<today?Math.round(100*a/rs.length)+"%":"–"}`}).join(""))}
+  <h3>By category (past events)</h3>${T(["Category","Registered","Attended","Rate"],group(r=>ev(r.eid).cat,past))}
+  <h3>By department (past events)</h3>${T(["Department","Registered","Attended","Rate"],group(r=>pe(r.pid).dept,past))}`}
+function draw(){$("#nav").innerHTML=[["dash","Dashboard"],["events","Events"],["people","Participants"],["reports","Reports"]].map(([k,l])=>`<button class="${view==k||(view=="event"&&k=="events")?"on":""}" onclick="go('${k}')">${l}</button>`).join("");
+  $("#app").innerHTML=({dash,events,event,people,reports})[view]()}
+draw();
+</script></body></html>
